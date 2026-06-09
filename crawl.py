@@ -2,10 +2,9 @@ import requests
 import pandas as pd
 from datetime import datetime
 import os
-import time
 
 # 配置
-# 核心过滤：fs=m:90+t:2 彻底锁定了东财的“行业板块”（去除了所有概念板块），pz=100 一页直接封顶抓完
+# 核心过滤：fs=m:90+t:2 彻底锁定了东财的“行业板块”，pz=100 一页直接封顶抓完
 API_URL = "https://11.push2.eastmoney.com/api/qt/clist/get?pn=1&pz=100&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2+f:!62&fields=f12,f14,f9"
 
 HEADERS = {
@@ -36,7 +35,8 @@ def fetch_industry_pe():
         return pd.DataFrame()
         
     rows = []
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 【修改点】修改时间格式，只保留年月日 (YYYY-MM-DD)
+    today = datetime.now().strftime("%Y-%m-%d")
     
     for item in data_list:
         pe_val = item.get("f9", "-")
@@ -45,8 +45,9 @@ def fetch_industry_pe():
         if pe_val == "-" or pe_val == "" or pe_val is None:
             continue
             
+        # 【修改点】精简列名，只保留日期、代码、名称和PE
         rows.append({
-            "采集时间": now,
+            "采集日期": today,
             "行业代码": item.get("f12", ""),
             "行业名称": item.get("f14", ""),
             "PE(TTM)": pe_val
