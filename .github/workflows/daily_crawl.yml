@@ -2,7 +2,7 @@ name: 每日板块估值更新
 on:
   schedule:
     # UTC时间 02:00 = 北京时间 10:00，可自行修改
-    - cron: '0 12 * * *'
+    - cron: '40 12 * * *'
   workflow_dispatch: # 支持手动点击立即运行
 
 jobs:
