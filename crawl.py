@@ -2,10 +2,11 @@ import requests
 import pandas as pd
 from datetime import datetime
 import os
+import time
 
 # 配置
-# 核心过滤：fs=m:90+t:2 彻底锁定了东财的“行业板块”，pz=100 一页直接封顶抓完
-API_URL = "https://11.push2.eastmoney.com/api/qt/clist/get?pn=1&pz=100&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2+f:!62&fields=f12,f14,f9"
+# fs=m:90+t:2 锁定东方财富的行业板块；fields=f12,f14,f9 分别代表代码、名称、PE(TTM)
+BASE_URL = "https://11.push2.eastmoney.com/api/qt/clist/get?pz=50&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2+f:!62&fields=f12,f14,f9"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -18,47 +19,50 @@ HISTORY_FILE = os.path.join(DATA_DIR, "pe_history.csv")
 if not os.path.exists(DATA_DIR):
     os.mkdir(DATA_DIR)
 
-def fetch_industry_pe():
-    """只抓取行业板块的核心 PE 数据"""
-    print("🚀 开始抓取东方财富核心行业板块 PE 估值...")
-    try:
-        res = requests.get(API_URL, headers=HEADERS, timeout=15)
-        res.raise_for_status()
-        json_data = res.json()
-    except Exception as e:
-        print(f"❌ 请求接口失败: {e}")
-        return pd.DataFrame()
-        
-    data_list = json_data.get("data", {}).get("diff", [])
-    if not data_list:
-        print("⚠️ 未能获取到有效的行业数据。")
-        return pd.DataFrame()
-        
-    rows = []
-    # 【修改点】修改时间格式，只保留年月日 (YYYY-MM-DD)
+def fetch_all_industries():
+    """抓取全部行业板块数据（包含亏损行业，自动分页）"""
+    all_rows = []
     today = datetime.now().strftime("%Y-%m-%d")
+    page = 1
     
-    for item in data_list:
-        pe_val = item.get("f9", "-")
-        
-        # 严格过滤：如果 PE 字段为空、为 "-" (通常是亏损行业) 则直接跳过
-        if pe_val == "-" or pe_val == "" or pe_val is None:
-            continue
+    print("🚀 开始抓取东方财富全量行业板块数据...")
+    
+    while True:
+        url = f"{BASE_URL}&pn={page}"
+        try:
+            res = requests.get(url, headers=HEADERS, timeout=15)
+            res.raise_for_status()
+            json_data = res.json()
+        except Exception as e:
+            print(f"❌ 第 {page} 页请求失败: {e}")
+            break
             
-        # 【修改点】精简列名，只保留日期、代码、名称和PE
-        rows.append({
-            "采集日期": today,
-            "行业代码": item.get("f12", ""),
-            "行业名称": item.get("f14", ""),
-            "PE(TTM)": pe_val
-        })
+        data_list = json_data.get("data", {}).get("diff", [])
         
-    return pd.DataFrame(rows)
+        # 如果这一页没有数据了，说明已经全部抓完
+        if not data_list:
+            break
+            
+        for item in data_list:
+            # 即使 PE 是 "-"（代表亏损或无法计算），也保留下来
+            pe_val = item.get("f9", "-")
+            
+            all_rows.append({
+                "采集日期": today,
+                "行业代码": item.get("f12", ""),
+                "行业名称": item.get("f14", ""),
+                "PE(TTM)": pe_val
+            })
+            
+        page += 1
+        time.sleep(0.2) # 稍微减缓请求频率
+        
+    return pd.DataFrame(all_rows)
 
 def save_history(df_new):
     """追加保存到历史 CSV"""
     if df_new.empty:
-        print("⚠️ 本次没有抓取到有效的 PE 数据，跳过保存。")
+        print("⚠️ 未能抓取到任何有效的行业数据。")
         return
         
     if os.path.exists(HISTORY_FILE):
@@ -72,9 +76,9 @@ def save_history(df_new):
         df_all = df_new
         
     df_all.to_csv(HISTORY_FILE, index=False, encoding="utf-8-sig")
-    print(f"💾 成功追加 {len(df_new)} 条行业 PE 数据至 {HISTORY_FILE}")
+    print(f"💾 成功追加 {len(df_new)} 条全量行业数据至 {HISTORY_FILE}")
 
 if __name__ == "__main__":
-    df = fetch_industry_pe()
+    df = fetch_all_industries()
     save_history(df)
     print("✅ 任务结束")
